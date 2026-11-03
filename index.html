@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PHY 120 | Quiz 04 Virtual Projectile Lab</title>
+<style>
+:root{font-family:Arial,Helvetica,sans-serif;color:#20344e;background:#f6f8fb}
+*{box-sizing:border-box}body{margin:0;padding:24px}
+main{max-width:1200px;margin:auto}
+h1{font-size:26px;margin:0 0 8px} .subtitle{color:#59687a;margin:0 0 22px}
+.layout{display:grid;grid-template-columns:minmax(0,2.3fr) minmax(275px,1fr);gap:24px}
+.panel{background:white;border:1px solid #d9e0e8;border-radius:10px;padding:16px;margin-bottom:18px}
+h2{font-size:16px;margin:0 0 12px}canvas{display:block;width:100%;height:auto;border:1px solid #c9d2dd;border-radius:5px;touch-action:none}
+.paper-label{font-size:13px;font-weight:bold;margin:6px 0 10px}
+label{font-size:14px;display:block;margin:14px 0 8px}
+select,button{width:100%;font-size:15px;padding:11px;border-radius:6px}
+select{border:1px solid #abb7c7;background:white}
+button{cursor:pointer;border:1px solid #a7b4c5;background:#edf2f8;color:#1c344f;margin-top:12px}
+button.primary{background:#3179b5;color:white;border-color:#3179b5;font-weight:bold}
+button:disabled{opacity:.5;cursor:not-allowed}
+.value{margin:13px 0;font-size:15px}.readout{background:#e4eff9;padding:13px;text-align:center;font-size:17px;font-weight:bold;border-radius:6px;margin-top:15px}
+ol{padding-left:22px;line-height:1.65;font-size:14px}
+.note{font-size:13px;color:#526174;line-height:1.5}
+#status{min-height:24px;color:#39536b;font-size:13px;margin-top:12px}
+@media(max-width:850px){body{padding:12px}.layout{grid-template-columns:1fr}}
+</style>
+</head>
+<body><main>
+<h1>PHY 120 &nbsp;|&nbsp; QUIZ 04: PROJECTILE MOTION</h1>
+<p class="subtitle">Virtual makeup experiment &nbsp;|&nbsp; Record measurements and calculations on your original Quiz 04 worksheet.</p>
+<div class="layout">
+<section>
+<div class="panel"><canvas id="motion" width="850" height="370" aria-label="Side view of projectile launcher and trajectory"></canvas></div>
+<div class="paper-label">VIRTUAL CARBON PAPER &nbsp;|&nbsp; Drag the blue measurement line to each numbered impact mark</div>
+<div class="panel"><canvas id="paper" width="850" height="210" aria-label="Top view of paper with impact marks and draggable ruler"></canvas></div>
+</section>
+<aside class="panel">
+<h2>EXPERIMENT CONTROLS</h2>
+<label for="angle">Launch angle</label>
+<select id="angle"><option value="0">Part 1: Horizontal (0°)</option><option value="1">Part 3: Angled (30°)</option></select>
+<button class="primary" id="launch">LAUNCH PROJECTILE</button>
+<button id="reset">Reset current angle</button>
+<h2 style="margin-top:32px">MEASUREMENT INFORMATION</h2>
+<div class="value">Launch height: <strong>h = 0.82 m</strong></div>
+<div class="value" id="rp"></div>
+<div class="value" id="trials"></div>
+<div class="readout" id="readout">Ruler: d = 0.000 m</div>
+<div id="status" aria-live="polite"></div>
+<h2 style="margin-top:24px">INSTRUCTIONS</h2>
+<ol><li>Fire five shots at 0°.</li><li>Drag the blue ruler to each impact mark.</li><li>Record <em>d</em> and calculate <em>R = R<sub>p</sub> + d</em>.</li><li>Calculate the initial speed and predict the range at 30°.</li><li>Switch to 30° and repeat five shots.</li></ol>
+<p class="note">The initial speed is intentionally hidden. Use the ruler rather than estimating landing positions from the side-view animation. The spring setting remains unchanged.</p>
+</aside>
+</div>
+</main>
+<script>
+(()=>{
+'use strict';
+const g=9.81,h=.82,v0=4.20,paperWidth=.75,maxTrials=5;
+const angles=[0,30],starts=[1.40,2.15],speedScatter=.006,angleScatter=.18;
+const state={angle:0,marks:[[],[]],ruler:0,dragging:false,busy:false};
+const motion=document.getElementById('motion'),mc=motion.getContext('2d');
+const paper=document.getElementById('paper'),pc=paper.getContext('2d');
+const select=document.getElementById('angle'),launchBtn=document.getElementById('launch');
+const resetBtn=document.getElementById('reset'),rp=document.getElementById('rp');
+const trials=document.getElementById('trials'),readout=document.getElementById('readout');
+const status=document.getElementById('status');
+const W=motion.width,H=motion.height;
+const mx=x=>70+(x+.30)/4.85*(W-105);
+const my=y=>H-52-(y+.12)/1.67*(H-100);
+const P={left:65,right:paper.width-35,top:25,bottom:paper.height-49};
+const px=d=>P.left+d/paperWidth*(P.right-P.left);
+const invPx=x=>(x-P.left)/(P.right-P.left)*paperWidth;
+function gaussian(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)}
+function line(c,x1,y1,x2,y2,color='#cbd4df',width=1){c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.strokeStyle=color;c.lineWidth=width;c.stroke()}
+function rect(c,x,y,w,h,fill,stroke){c.fillStyle=fill;c.fillRect(x,y,w,h);if(stroke){c.strokeStyle=stroke;c.strokeRect(x,y,w,h)}}
+function text(c,s,x,y,color='#30445c',size=14,align='left',weight='normal'){c.fillStyle=color;c.font=`${weight} ${size}px Arial`;c.textAlign=align;c.fillText(s,x,y)}
+function ball(c,x,y){c.beginPath();c.arc(mx(x),my(Math.max(0,y)),8,0,2*Math.PI);c.fillStyle='#d65b36';c.fill();c.strokeStyle='#7c301c';c.stroke()}
+function drawMotion(t=null,shot=null){
+mc.clearRect(0,0,W,H);rect(mc,0,0,W,H,'#fff');
+for(let x=0;x<=4.5;x+=.5){line(mc,mx(x),my(-.12),mx(x),my(1.55),'#e5eaf0');text(mc,x.toFixed(1),mx(x),H-29,'#647488',11,'center')}
+for(let y=0;y<=1.5;y+=.25){line(mc,mx(-.30),my(y),mx(4.55),my(y),'#e5eaf0');text(mc,y.toFixed(2),mx(-.30)-9,my(y)+4,'#647488',11,'right')}
+rect(mc,mx(-.30),my(0),mx(4.55)-mx(-.30),my(-.12)-my(0),'#dde8da');
+rect(mc,mx(-.30),my(h),mx(0)-mx(-.30),my(0)-my(h),'#b5bdc6','#7e8a98');
+line(mc,mx(0),my(h),mx(0),my(0),'#364353',2);
+const x1=starts[state.angle];rect(mc,mx(x1),my(.025),mx(x1+paperWidth)-mx(x1),my(0)-my(.025),'#fff0b2','#bda55d');
+text(mc,'PAPER',mx(x1+paperWidth/2),my(.11),'#736027',12,'center','bold');
+text(mc,`Side view  |  Launch angle: ${angles[state.angle]}°`,W/2,22,'#253c57',17,'center','bold');
+text(mc,'Horizontal position from table edge, x (m)',W/2,H-5,'#33465d',13,'center');
+mc.save();mc.translate(18,H/2);mc.rotate(-Math.PI/2);text(mc,'Height above floor, y (m)',0,0,'#33465d',13,'center');mc.restore();
+if(shot&&t!==null){mc.beginPath();for(let i=0;i<=80;i++){const tt=t*i/80,x=shot.vx*tt,y=Math.max(0,h+shot.vy*tt-.5*g*tt*tt);if(i===0)mc.moveTo(mx(x),my(y));else mc.lineTo(mx(x),my(y))}mc.strokeStyle='#4c8dbf';mc.lineWidth=2;mc.stroke();ball(mc,shot.vx*t,h+shot.vy*t-.5*g*t*t)}
+else ball(mc,0,h);
+}
+function drawPaper(){
+pc.clearRect(0,0,paper.width,paper.height);rect(pc,0,0,paper.width,paper.height,'#fff');
+rect(pc,P.left,P.top,P.right-P.left,P.bottom-P.top,'#fffef1','#a9a9a0');
+for(let d=0;d<=paperWidth+1e-8;d+=.025){const x=px(d);line(pc,x,P.top,x,P.bottom,Math.round(d*1000)%100===0?'#d7d5c3':'#eeecdc',Math.round(d*1000)%100===0?1.2:.7)}
+for(let d=0;d<=paperWidth+1e-8;d+=.05){const x=px(d);text(pc,d.toFixed(2),x,P.bottom+18,'#536173',11,'center')}
+text(pc,'Distance from near edge of paper, d (m)',paper.width/2,paper.height-9,'#34445a',13,'center');
+const marks=state.marks[state.angle];
+marks.forEach((d,i)=>{
+const x=px(d),y=P.top+(P.bottom-P.top)*(.5+.13*(i-2));
+line(pc,x-7,y-7,x+7,y+7,'#343434',2.5);line(pc,x-7,y+7,x+7,y-7,'#343434',2.5);
+text(pc,String(i+1),x+9,y-9,'#343434',13,'left','bold');
+});
+const x=px(state.ruler);line(pc,x,P.top,x,P.bottom,'#1769c4',4);
+pc.beginPath();pc.arc(x,P.top,7,0,2*Math.PI);pc.fillStyle='#1769c4';pc.fill();
+}
+function refresh(){
+rp.textContent=`Paper near edge: Rp = ${starts[state.angle].toFixed(2)} m`;
+trials.textContent=`Completed trials: ${state.marks[state.angle].length} / ${maxTrials}`;
+readout.textContent=`Ruler: d = ${state.ruler.toFixed(3)} m`;
+launchBtn.disabled=state.busy||state.marks[state.angle].length>=maxTrials;
+select.disabled=state.busy;resetBtn.disabled=state.busy;
+drawMotion();drawPaper();
+}
+select.addEventListener('change',()=>{if(state.busy)return;state.angle=Number(select.value);state.ruler=0;status.textContent='';refresh()});
+resetBtn.addEventListener('click',()=>{if(state.busy)return;if(!confirm('Clear the five measurements for this angle?'))return;state.marks[state.angle]=[];state.ruler=0;status.textContent='Measurements cleared.';refresh()});
+launchBtn.addEventListener('click',()=>{
+if(state.busy||state.marks[state.angle].length>=maxTrials)return;
+const k=state.angle,theta=(angles[k]+angleScatter*gaussian())*Math.PI/180;
+const speed=v0*(1+speedScatter*gaussian()),vx=speed*Math.cos(theta),vy=speed*Math.sin(theta);
+const tEnd=(vy+Math.sqrt(vy*vy+2*g*h))/g,xEnd=vx*tEnd;
+state.busy=true;launchBtn.disabled=true;select.disabled=true;resetBtn.disabled=true;
+status.textContent='Projectile in flight...';
+const shot={vx,vy};let startTime=null;const duration=1100;
+function frame(now){
+if(!document.body.contains(motion))return;
+if(startTime===null)startTime=now;
+const fraction=Math.min((now-startTime)/duration,1);
+drawMotion(tEnd*fraction,shot);
+if(fraction<1){requestAnimationFrame(frame);return}
+state.marks[k].push(xEnd-starts[k]);state.busy=false;
+status.textContent=`Trial ${state.marks[k].length} complete. Measure the new impact mark below.`;
+refresh();
+}
+requestAnimationFrame(frame);
+});
+function eventPaperX(e){const r=paper.getBoundingClientRect();return (e.clientX-r.left)/r.width*paper.width}
+function setRuler(e){state.ruler=Math.max(0,Math.min(paperWidth,invPx(eventPaperX(e))));readout.textContent=`Ruler: d = ${state.ruler.toFixed(3)} m`;drawPaper()}
+paper.addEventListener('pointerdown',e=>{if(state.busy)return;state.dragging=true;paper.setPointerCapture(e.pointerId);setRuler(e)});
+paper.addEventListener('pointermove',e=>{if(state.dragging)setRuler(e)});
+paper.addEventListener('pointerup',()=>state.dragging=false);
+paper.addEventListener('pointercancel',()=>state.dragging=false);
+refresh();
+})();
+</script>
+</body></html>
